@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Company Success Analyzer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #fff; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #111; min-height: 100vh; }
+    .container { max-width: 640px; margin: 0 auto; padding: 3rem 1.5rem 5rem; }
+    h1 { font-size: 1.7rem; font-weight: 800; letter-spacing: -0.02em; margin-bottom: 0.35rem; }
+    .subtitle { color: #6b7280; font-size: 0.88rem; margin-bottom: 2rem; }
+
+    #search-row { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+    #company-input { flex: 1; min-width: 0; padding: 0.7rem 1rem; border: 1.5px solid #e5e7eb; border-radius: 8px; font-size: 0.95rem; background: #fafafa; font-family: inherit; transition: border-color 0.15s; }
+    #company-input:focus { outline: none; border-color: #111; }
+    #analyze-btn { padding: 0.7rem 1.3rem; background: #111; border: 1.5px solid #111; border-radius: 8px; color: #fff; font-weight: 600; font-size: 0.88rem; cursor: pointer; white-space: nowrap; flex-shrink: 0; font-family: inherit; transition: background 0.15s; }
+    #analyze-btn:hover:not(:disabled) { background: #000; }
+    #analyze-btn:disabled { background: #f3f4f6; color: #9ca3af; cursor: not-allowed; border-color: #e5e7eb; }
+
+    #toggle-extra { display: flex; align-items: center; gap: 0.4rem; background: none; border: 1.5px solid #e5e7eb; border-radius: 7px; color: #6b7280; font-weight: 600; font-size: 0.78rem; padding: 0.45rem 0.85rem; cursor: pointer; margin-bottom: 1rem; font-family: inherit; transition: background 0.15s; }
+    #toggle-extra:hover { background: #f3f4f6; }
+    #toggle-extra .hint { color: #9ca3af; font-weight: 400; }
+
+    #extra-panel { border: 1.5px solid #e5e7eb; border-radius: 12px; padding: 1.25rem; margin-bottom: 1.25rem; background: #fafafa; display: none; }
+    #extra-panel.open { display: block; }
+    #extra-panel .intro { font-size: 0.8rem; color: #374151; line-height: 1.6; margin-bottom: 1rem; }
+    .field-group { margin-bottom: 0.9rem; }
+    .field-group label { display: block; font-size: 0.75rem; font-weight: 600; color: #374151; margin-bottom: 0.3rem; }
+    .field-group textarea { width: 100%; padding: 0.6rem 0.8rem; border: 1.5px solid #e5e7eb; border-radius: 7px; font-size: 0.82rem; background: #fff; color: #111; resize: vertical; font-family: inherit; line-height: 1.5; transition: border-color 0.15s; }
+    .field-group textarea:focus { outline: none; border-color: #111; }
+    #clear-fields { background: none; border: none; color: #9ca3af; font-size: 0.75rem; cursor: pointer; text-decoration: underline; font-family: inherit; display: none; }
+
+    #status { display: none; align-items: center; gap: 0.6rem; color: #6b7280; font-size: 0.83rem; margin-bottom: 1.25rem; }
+    #status.visible { display: flex; }
+    .spinner { width: 14px; height: 14px; flex-shrink: 0; border: 2px solid #e5e7eb; border-top-color: #111; border-radius: 50%; animation: spin 0.75s linear infinite; }
+
+    #error { display: none; padding: 0.75rem 1rem; background: #fef2f2; border: 1px solid #fecaca; border-radius: 8px; color: #dc2626; font-size: 0.83rem; margin-bottom: 1.25rem; line-height: 1.5; }
+    #error.visible { display: block; }
+
+    #results { display: none; }
+    #results.visible { display: block; animation: fadeIn 0.35s ease both; }
+    .card { border: 1.5px solid #e5e7eb; border-radius: 12px; padding: 1.25rem; margin-bottom: 0.75rem; }
+    .company-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; flex-wrap: wrap; margin-bottom: 1rem; }
+    .company-name { font-size: 1.25rem; font-weight: 800; margin-bottom: 0.2rem; }
+    .company-desc { font-size: 0.8rem; color: #6b7280; line-height: 1.6; }
+    .verdict-badge { padding: 0.2rem 0.7rem; border-radius: 100px; font-weight: 700; font-size: 0.72rem; flex-shrink: 0; white-space: nowrap; }
+    .score-box { background: #f9fafb; border-radius: 8px; padding: 1.1rem; text-align: center; }
+    .score-label { font-size: 0.65rem; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.25rem; }
+    .score-number-row { display: flex; align-items: baseline; justify-content: center; gap: 0.15rem; line-height: 1; }
+    .score-number { font-size: 3rem; font-weight: 800; letter-spacing: -0.03em; }
+    .score-denom { font-size: 1.1rem; font-weight: 600; color: #9ca3af; }
+    .score-bar-track { margin: 0.75rem 0 0.5rem; height: 6px; background: #e5e7eb; border-radius: 3px; overflow: hidden; }
+    .score-bar-fill { height: 100%; border-radius: 3px; width: 0%; transition: width 1.2s cubic-bezier(0.16,1,0.3,1); }
+    .score-formula { font-size: 0.68rem; color: #9ca3af; }
+    .section-label { font-size: 0.68rem; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 1rem; }
+    .var-row { margin-bottom: 1.2rem; }
+    .var-header { display: flex; justify-content: space-between; margin-bottom: 0.3rem; }
+    .var-left { display: flex; gap: 0.5rem; align-items: baseline; }
+    .var-key { font-weight: 700; font-size: 0.8rem; color: #111; }
+    .var-name { font-size: 0.78rem; color: #6b7280; }
+    .var-score { font-weight: 700; font-size: 0.9rem; }
+    .var-bar-track { height: 5px; background: #f0f0f0; border-radius: 3px; overflow: hidden; }
+    .var-bar-fill { height: 100%; border-radius: 3px; width: 0%; transition: width 1s cubic-bezier(0.16,1,0.3,1); }
+    .var-reasoning { margin-top: 0.3rem; font-size: 0.75rem; color: #9ca3af; line-height: 1.5; }
+    #verdict-box { border-radius: 12px; padding: 1.1rem 1.25rem; margin-bottom: 1.25rem; }
+    .verdict-title { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 0.4rem; }
+    #verdict-text { font-size: 0.86rem; color: #374151; line-height: 1.7; }
+    #reset-btn { background: #fff; border: 1.5px solid #e5e7eb; border-radius: 8px; color: #6b7280; font-weight: 600; font-size: 0.8rem; padding: 0.55rem 1rem; cursor: pointer; font-family: inherit; transition: all 0.15s; }
+    #reset-btn:hover { background: #f9fafb; border-color: #d1d5db; color: #374151; }
+    #legend { margin-top: 1.5rem; }
+    #legend p { font-size: 0.68rem; color: #9ca3af; margin-bottom: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; }
+    .legend-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.4rem; }
+    .legend-item { display: flex; gap: 0.5rem; align-items: center; padding: 0.5rem 0.75rem; background: #f9fafb; border-radius: 6px; }
+    .legend-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .legend-key { font-weight: 700; font-size: 0.76rem; }
+    .legend-label { font-size: 0.73rem; color: #9ca3af; }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1>Company Success Analyzer</h1>
+  <p class="subtitle">Rates any company's future success out of 10 using S = (V × E) × (T + S)<sup style="font-size:0.7em">(M+N)</sup></p>
+
+  <div id="search-row">
+    <input id="company-input" type="text" placeholder="Enter any company name..." />
+    <button id="analyze-btn">Analyze</button>
+  </div>
+
+  <button id="toggle-extra">
+    <span id="toggle-arrow">▸</span>
+    <span id="toggle-label">Add company info manually</span>
+    <span class="hint" id="toggle-hint"> — for unlisted or private companies</span>
+  </button>
+
+  <div id="extra-panel">
+    <p class="intro"><strong>No web presence?</strong> Fill in what you know. Leave blank any fields you don't know.</p>
+    <div class="field-group"><label>What does the company do?</label><textarea id="f-what" rows="2" placeholder="e.g. B2B SaaS for supply chain logistics..."></textarea></div>
+    <div class="field-group"><label>Who founded it / who runs it?</label><textarea id="f-founder" rows="2" placeholder="e.g. Former Google engineer, 10 yrs experience..."></textarea></div>
+    <div class="field-group"><label>What market are they targeting?</label><textarea id="f-market" rows="2" placeholder="e.g. SMBs in the US healthcare sector..."></textarea></div>
+    <div class="field-group"><label>Any traction, revenue, or customers?</label><textarea id="f-traction" rows="2" placeholder="e.g. $50k MRR, 200 paying customers..."></textarea></div>
+    <div class="field-group"><label>Who are their competitors?</label><textarea id="f-competition" rows="2" placeholder="e.g. Competing with Salesforce and HubSpot..."></textarea></div>
+    <div class="field-group"><label>Anything else relevant?</label><textarea id="f-extra" rows="2" placeholder="e.g. Raised $500k pre-seed, launched 6 months ago..."></textarea></div>
+    <button id="clear-fields">Clear all fields</button>
+  </div>
+
+  <div id="status"><div class="spinner"></div><span id="status-text">Analyzing...</span></div>
+  <div id="error"></div>
+
+  <div id="results">
+    <div class="card">
+      <div class="company-header">
+        <div style="flex:1;min-width:0">
+          <div class="company-name" id="res-name"></div>
+          <div class="company-desc" id="res-desc"></div>
+        </div>
+        <div class="verdict-badge" id="res-badge"></div>
+      </div>
+      <div class="score-box">
+        <div class="score-label">Success Score</div>
+        <div class="score-number-row">
+          <span class="score-number" id="res-score">0.0</span>
+          <span class="score-denom">/10</span>
+        </div>
+        <div class="score-bar-track"><div class="score-bar-fill" id="res-score-bar"></div></div>
+        <div class="score-formula">Normalized from S = (V × E) × (T + S)<sup style="font-size:0.7em">(M+N)</sup> · max = 10.0</div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="section-label">Variable Breakdown</div>
+      <div id="var-breakdown"></div>
+    </div>
+    <div id="verdict-box">
+      <div class="verdict-title" id="verdict-title">Verdict</div>
+      <div id="verdict-text"></div>
+    </div>
+    <button id="reset-btn">Analyze another →</button>
+  </div>
+
+  <div id="legend">
+    <p>Formula variables</p>
+    <div class="legend-grid" id="legend-grid"></div>
+  </div>
+
+</div>
+<script>
+  const VARS = {
+    V: { label: "Vision & Opportunity", color: "#f59e0b" },
+    E: { label: "Execution & People",   color: "#10b981" },
+    T: { label: "Timing",               color: "#3b82f6" },
+    S: { label: "Scalability",          color: "#8b5cf6" },
+    M: { label: "Moat & Durability",    color: "#ef4444" },
+    N: { label: "Network Effects",      color: "#ec4899" },
+  };
+  const VERDICT_COLORS = { Exceptional:"#16a34a", Strong:"#2563eb", Promising:"#7c3aed", Moderate:"#d97706", Weak:"#dc2626" };
+
+  // Build legend
+  const legendGrid = document.getElementById("legend-grid");
+  for (const [k, v] of Object.entries(VARS)) {
+    const el = document.createElement("div");
+    el.className = "legend-item";
+    el.innerHTML = `<span class="legend-dot" style="background:${v.color}"></span><span class="legend-key">${k}</span><span class="legend-label">${v.label}</span>`;
+    legendGrid.appendChild(el);
+  }
+
+  let extraOpen = false;
+  let animFrame = null;
+
+  // Extra panel
+  document.getElementById("toggle-extra").addEventListener("click", () => {
+    extraOpen = !extraOpen;
+    document.getElementById("extra-panel").classList.toggle("open", extraOpen);
+    document.getElementById("toggle-arrow").textContent = extraOpen ? "▾" : "▸";
+    updateToggleLabel();
+  });
+  document.getElementById("clear-fields").addEventListener("click", () => {
+    ["what","founder","market","traction","competition","extra"].forEach(k => document.getElementById("f-"+k).value = "");
+    document.getElementById("clear-fields").style.display = "none";
+    updateToggleLabel();
+  });
+  ["what","founder","market","traction","competition","extra"].forEach(k => {
+    document.getElementById("f-"+k).addEventListener("input", () => {
+      const has = getExtraContext().trim().length > 0;
+      document.getElementById("clear-fields").style.display = has ? "inline" : "none";
+      updateToggleLabel();
+    });
+  });
+  function updateToggleLabel() {
+    const has = getExtraContext().trim().length > 0;
+    document.getElementById("toggle-label").textContent = (has && !extraOpen) ? "✓ Company info added" : "Add company info manually";
+    document.getElementById("toggle-hint").textContent  = (has && !extraOpen) ? "" : " — for unlisted or private companies";
+  }
+  function getExtraContext() {
+    return [
+      { id:"f-what",        q:"What does the company do?" },
+      { id:"f-founder",     q:"Who founded it / who runs it?" },
+      { id:"f-market",      q:"What market are they targeting?" },
+      { id:"f-traction",    q:"Any traction, revenue, or customers?" },
+      { id:"f-competition", q:"Who are their competitors?" },
+      { id:"f-extra",       q:"Anything else relevant?" },
+    ].filter(f => document.getElementById(f.id).value.trim())
+     .map(f => `${f.q}\n${document.getElementById(f.id).value.trim()}`)
+     .join("\n\n");
+  }
+
+  // Analyze
+  document.getElementById("company-input").addEventListener("keydown", e => { if (e.key === "Enter") analyze(); });
+  document.getElementById("analyze-btn").addEventListener("click", analyze);
+  document.getElementById("reset-btn").addEventListener("click", reset);
+
+  async function analyze() {
+    const company = document.getElementById("company-input").value.trim();
+    if (!company) return;
+
+    setStatus(true, `Analyzing "${company}"...`);
+    hideError();
+    hideResults();
+    document.getElementById("analyze-btn").disabled = true;
+
+    try {
+      const res = await fetch("/api/analyze", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ company, extraContext: getExtraContext() }),
+      });
+
+      const data = await res.json();
+      if (!res.ok || data.error) throw new Error(data.error || "Server error");
+      renderResults(data);
+    } catch (e) {
+      showError("Analysis failed: " + e.message);
+    } finally {
+      setStatus(false);
+      document.getElementById("analyze-btn").disabled = false;
+    }
+  }
+
+  function renderResults(data) {
+    const vc = VERDICT_COLORS[data.successLabel] || "#6b7280";
+    const score = data.normalizedScore;
+    const sc = score >= 7 ? "#16a34a" : score >= 5 ? "#2563eb" : score >= 3 ? "#d97706" : "#dc2626";
+
+    document.getElementById("res-name").textContent = data.company;
+    document.getElementById("res-desc").textContent = data.description;
+
+    const badge = document.getElementById("res-badge");
+    badge.textContent = data.successLabel;
+    badge.style.cssText = `padding:0.2rem 0.7rem;border-radius:100px;font-weight:700;font-size:0.72rem;flex-shrink:0;white-space:nowrap;background:${vc}18;border:1.5px solid ${vc}40;color:${vc}`;
+
+    const scoreEl = document.getElementById("res-score");
+    scoreEl.style.color = sc;
+    animateNumber(scoreEl, score, 1200);
+
+    const bar = document.getElementById("res-score-bar");
+    bar.style.background = sc;
+    requestAnimationFrame(() => requestAnimationFrame(() => { bar.style.width = (score / 10 * 100) + "%"; }));
+
+    const breakdown = document.getElementById("var-breakdown");
+    breakdown.innerHTML = "";
+    Object.entries(data.scores).forEach(([k, v], i) => {
+      const meta = VARS[k]; if (!meta) return;
+      const row = document.createElement("div");
+      row.className = "var-row";
+      row.innerHTML = `
+        <div class="var-header">
+          <div class="var-left"><span class="var-key">${k}</span><span class="var-name">${meta.label}</span></div>
+          <span class="var-score" style="color:${meta.color}">${Number(v).toFixed(1)}</span>
+        </div>
+        <div class="var-bar-track"><div class="var-bar-fill" id="vbar-${k}" style="background:${meta.color}"></div></div>
+        ${data.reasoning?.[k] ? `<div class="var-reasoning">${data.reasoning[k]}</div>` : ""}
+      `;
+      breakdown.appendChild(row);
+      setTimeout(() => {
+        const fill = document.getElementById("vbar-" + k);
+        if (fill) fill.style.width = (Number(v) / 10 * 100) + "%";
+      }, i * 70);
+    });
+
+    const vbox = document.getElementById("verdict-box");
+    vbox.style.border = `1.5px solid ${vc}30`;
+    vbox.style.background = vc + "08";
+    document.getElementById("verdict-title").style.color = vc;
+    document.getElementById("verdict-text").textContent = data.verdict;
+
+    document.getElementById("results").classList.add("visible");
+    document.getElementById("legend").style.display = "none";
+  }
+
+  function animateNumber(el, target, duration) {
+    cancelAnimationFrame(animFrame);
+    const start = performance.now();
+    function tick(now) {
+      const p = Math.min((now - start) / duration, 1);
+      el.textContent = (target * (1 - Math.pow(1 - p, 3))).toFixed(1);
+      if (p < 1) animFrame = requestAnimationFrame(tick);
+    }
+    animFrame = requestAnimationFrame(tick);
+  }
+
+  function reset() {
+    document.getElementById("company-input").value = "";
+    document.getElementById("results").classList.remove("visible");
+    document.getElementById("legend").style.display = "block";
+    hideError();
+  }
+  function setStatus(on, text) {
+    document.getElementById("status").classList.toggle("visible", on);
+    if (text) document.getElementById("status-text").textContent = text;
+  }
+  function showError(msg) { const el = document.getElementById("error"); el.textContent = msg; el.classList.add("visible"); }
+  function hideError()    { document.getElementById("error").classList.remove("visible"); }
+  function hideResults()  { document.getElementById("results").classList.remove("visible"); }
+</script>
+</body>
+</html>
