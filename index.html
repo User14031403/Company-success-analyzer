@@ -1,144 +1,677 @@
-import { useState, useEffect, useRef } from "react";
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Company Success Analyzer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
-// Max possible: V=10, E=10, T=10, S=10, M=10, N=10
-// S_max = (10*10) * (20)^20
-const LOG_MAX = Math.log((10 * 10) * Math.pow(20, 20));
+    body {
+      background: #fff;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: #111;
+      min-height: 100vh;
+    }
 
-function computeNormalizedScore({ V, E, T, S, M, N }) {
-  const raw = (V * E) * Math.pow(T + S, M + N);
-  if (raw <= 0) return 0;
-  const logRaw = Math.log(raw);
-  return Math.min(10, Math.max(0, (logRaw / LOG_MAX) * 10));
-}
+    .container {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 3rem 1.5rem 5rem;
+    }
 
-function buildPrompt(company, extraInfo) {
-  return `You are a startup and company analyst. Use your training knowledge to analyze companies — you know about thousands of businesses from startups to enterprises across every industry.
+    h1 {
+      font-size: 1.7rem;
+      font-weight: 800;
+      letter-spacing: -0.02em;
+      margin-bottom: 0.35rem;
+    }
 
-Score the company on: S = (V * E) * (T + S)^(M + N)
+    .subtitle {
+      color: #6b7280;
+      font-size: 0.88rem;
+      margin-bottom: 2rem;
+    }
 
-Variables (0.0–10.0):
-- V: Vision & Opportunity — clarity of long-term goal, unique opportunity others don't see
-- E: Execution & People & Distribution & Innovation & Engineering & Capital — team, operations, delivery, tech, capital
-- T: Timing — alignment with technological or economic inflection points
-- S: Scalability — ability to grow with decreasing marginal costs
-- M: Moat & Market Share & Lock-in & Durability — competitive advantages, retention, monopolistic advantages
-- N: Network Effects — value increases with number of users
+    /* API Key banner */
+    #api-key-banner {
+      background: #fffbeb;
+      border: 1.5px solid #fde68a;
+      border-radius: 12px;
+      padding: 1rem 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+    #api-key-banner p {
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #92400e;
+      margin-bottom: 0.6rem;
+    }
+    #api-key-banner a { color: #2563eb; }
+    #api-key-row { display: flex; gap: 0.5rem; }
+    #api-key-input {
+      flex: 1;
+      padding: 0.6rem 0.9rem;
+      border: 1.5px solid #fcd34d;
+      border-radius: 7px;
+      font-size: 0.88rem;
+      font-family: inherit;
+    }
+    #api-key-save {
+      padding: 0.6rem 1rem;
+      background: #111;
+      border: none;
+      border-radius: 7px;
+      color: #fff;
+      font-weight: 600;
+      font-size: 0.82rem;
+      cursor: pointer;
+      font-family: inherit;
+    }
 
-${extraInfo
-  ? `User-provided context:\n"""\n${extraInfo}\n"""\nBase your scores primarily on this context. Fill any gaps with reasonable assumptions for the industry.`
-  : `Use everything you know. For well-known companies use real data. For lesser-known ones, reason from the industry, business model, and any details you know. If you're not sure about a company, make reasonable estimates and note uncertainty in the description. NEVER refuse to score.`
-}
+    /* Search bar */
+    #search-row { display: flex; gap: 0.5rem; margin-bottom: 0.75rem; }
+    #company-input {
+      flex: 1;
+      min-width: 0;
+      padding: 0.7rem 1rem;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 8px;
+      font-size: 0.95rem;
+      background: #fafafa;
+      font-family: inherit;
+      transition: border-color 0.15s;
+    }
+    #company-input:focus { outline: none; border-color: #111; }
+    #analyze-btn {
+      padding: 0.7rem 1.3rem;
+      background: #111;
+      border: 1.5px solid #111;
+      border-radius: 8px;
+      color: #fff;
+      font-weight: 600;
+      font-size: 0.88rem;
+      cursor: pointer;
+      white-space: nowrap;
+      flex-shrink: 0;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+    #analyze-btn:hover:not(:disabled) { background: #000; }
+    #analyze-btn:disabled { background: #f3f4f6; color: #9ca3af; cursor: not-allowed; border-color: #e5e7eb; }
 
-YOU MUST respond with ONLY a raw JSON object — no text before it, no text after it, no markdown, no backticks, no explanation. Just the JSON object starting with { and ending with }:
-{"company":"Company Name","description":"2-3 sentence overview","scores":{"V":7.5,"E":8.2,"T":9.0,"S":8.8,"M":7.0,"N":6.5},"reasoning":{"V":"one sentence","E":"one sentence","T":"one sentence","S":"one sentence","M":"one sentence","N":"one sentence"},"verdict":"2-3 sentence verdict","successLabel":"Exceptional"}
+    /* Toggle extra info */
+    #toggle-extra {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      background: none;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 7px;
+      color: #6b7280;
+      font-weight: 600;
+      font-size: 0.78rem;
+      padding: 0.45rem 0.85rem;
+      cursor: pointer;
+      margin-bottom: 1rem;
+      font-family: inherit;
+      transition: background 0.15s;
+    }
+    #toggle-extra:hover { background: #f3f4f6; }
+    #toggle-extra .hint { color: #9ca3af; font-weight: 400; }
 
-successLabel must be exactly one of: Exceptional, Strong, Promising, Moderate, Weak`;
-}
+    /* Extra info panel */
+    #extra-panel {
+      border: 1.5px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 1.25rem;
+      background: #fafafa;
+      display: none;
+    }
+    #extra-panel.open { display: block; }
+    #extra-panel .intro {
+      font-size: 0.8rem;
+      color: #374151;
+      line-height: 1.6;
+      margin-bottom: 1rem;
+    }
+    .field-group { margin-bottom: 0.9rem; }
+    .field-group label {
+      display: block;
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 0.3rem;
+    }
+    .field-group textarea {
+      width: 100%;
+      padding: 0.6rem 0.8rem;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 7px;
+      font-size: 0.82rem;
+      background: #fff;
+      color: #111;
+      resize: vertical;
+      font-family: inherit;
+      line-height: 1.5;
+      transition: border-color 0.15s;
+    }
+    .field-group textarea:focus { outline: none; border-color: #111; }
+    #clear-fields {
+      background: none;
+      border: none;
+      color: #9ca3af;
+      font-size: 0.75rem;
+      cursor: pointer;
+      text-decoration: underline;
+      font-family: inherit;
+      display: none;
+    }
 
-const VARS = {
-  V: { label: "Vision & Opportunity", color: "#f59e0b" },
-  E: { label: "Execution & People", color: "#10b981" },
-  T: { label: "Timing", color: "#3b82f6" },
-  S: { label: "Scalability", color: "#8b5cf6" },
-  M: { label: "Moat & Durability", color: "#ef4444" },
-  N: { label: "Network Effects", color: "#ec4899" },
-};
+    /* Loading */
+    #loading {
+      display: none;
+      align-items: center;
+      gap: 0.6rem;
+      color: #6b7280;
+      font-size: 0.83rem;
+      margin-bottom: 1.25rem;
+    }
+    #loading.visible { display: flex; }
+    .spinner {
+      width: 14px;
+      height: 14px;
+      flex-shrink: 0;
+      border: 2px solid #e5e7eb;
+      border-top-color: #111;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
 
-const VERDICT_COLORS = {
-  Exceptional: "#16a34a",
-  Strong: "#2563eb",
-  Promising: "#7c3aed",
-  Moderate: "#d97706",
-  Weak: "#dc2626",
-};
+    /* Error */
+    #error {
+      display: none;
+      padding: 0.75rem 1rem;
+      background: #fef2f2;
+      border: 1px solid #fecaca;
+      border-radius: 8px;
+      color: #dc2626;
+      font-size: 0.83rem;
+      margin-bottom: 1.25rem;
+    }
+    #error.visible { display: block; }
 
-const EXTRA_INFO_FIELDS = [
-  { key: "what", label: "What does the company do?", placeholder: "e.g. B2B SaaS for supply chain logistics..." },
-  { key: "founder", label: "Who founded it / who runs it?", placeholder: "e.g. Former Google engineer, 10 yrs experience..." },
-  { key: "market", label: "What market are they targeting?", placeholder: "e.g. SMBs in the US healthcare sector..." },
-  { key: "traction", label: "Any traction, revenue, or customers?", placeholder: "e.g. $50k MRR, 200 paying customers..." },
-  { key: "competition", label: "Who are their competitors?", placeholder: "e.g. Competing with Salesforce and HubSpot..." },
-  { key: "extra", label: "Anything else relevant?", placeholder: "e.g. Raised $500k pre-seed, launched 6 months ago..." },
-];
+    /* Results */
+    #results { display: none; }
+    #results.visible { display: block; animation: fadeIn 0.35s ease both; }
 
-function ScoreBar({ variable, score, reasoning, delay }) {
-  const [width, setWidth] = useState(0);
-  const meta = VARS[variable];
-  useEffect(() => {
-    const t = setTimeout(() => setWidth((score / 10) * 100), delay);
-    return () => clearTimeout(t);
-  }, [score, delay]);
+    .card {
+      border: 1.5px solid #e5e7eb;
+      border-radius: 12px;
+      padding: 1.25rem;
+      margin-bottom: 0.75rem;
+    }
 
-  return (
-    <div style={{ marginBottom: "1.2rem" }}>
-      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "0.3rem" }}>
-        <div style={{ display: "flex", gap: "0.5rem", alignItems: "baseline" }}>
-          <span style={{ fontWeight: 700, fontSize: "0.8rem", color: "#111" }}>{variable}</span>
-          <span style={{ fontSize: "0.78rem", color: "#6b7280" }}>{meta.label}</span>
-        </div>
-        <span style={{ fontWeight: 700, fontSize: "0.9rem", color: meta.color }}>{score.toFixed(1)}</span>
-      </div>
-      <div style={{ height: "5px", background: "#f0f0f0", borderRadius: "3px", overflow: "hidden" }}>
-        <div style={{
-          height: "100%", width: `${width}%`,
-          background: meta.color, borderRadius: "3px",
-          transition: "width 1s cubic-bezier(0.16,1,0.3,1)",
-        }} />
-      </div>
-      {reasoning && <p style={{ margin: "0.3rem 0 0", fontSize: "0.75rem", color: "#9ca3af", lineHeight: 1.5 }}>{reasoning}</p>}
+    .company-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 1rem;
+    }
+    .company-name { font-size: 1.25rem; font-weight: 800; margin-bottom: 0.2rem; }
+    .company-desc { font-size: 0.8rem; color: #6b7280; line-height: 1.6; }
+    .verdict-badge {
+      padding: 0.2rem 0.7rem;
+      border-radius: 100px;
+      font-weight: 700;
+      font-size: 0.72rem;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+
+    /* Score display */
+    .score-box {
+      background: #f9fafb;
+      border-radius: 8px;
+      padding: 1.1rem;
+      text-align: center;
+    }
+    .score-label {
+      font-size: 0.65rem;
+      font-weight: 600;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.25rem;
+    }
+    .score-number-row {
+      display: flex;
+      align-items: baseline;
+      justify-content: center;
+      gap: 0.15rem;
+      line-height: 1;
+    }
+    .score-number {
+      font-size: 3rem;
+      font-weight: 800;
+      letter-spacing: -0.03em;
+    }
+    .score-denom { font-size: 1.1rem; font-weight: 600; color: #9ca3af; }
+    .score-bar-track {
+      margin: 0.75rem 0 0.5rem;
+      height: 6px;
+      background: #e5e7eb;
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .score-bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      width: 0%;
+      transition: width 1.2s cubic-bezier(0.16,1,0.3,1);
+    }
+    .score-formula { font-size: 0.68rem; color: #9ca3af; }
+
+    /* Variable breakdown */
+    .section-label {
+      font-size: 0.68rem;
+      font-weight: 700;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 1rem;
+    }
+    .var-row { margin-bottom: 1.2rem; }
+    .var-header {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 0.3rem;
+    }
+    .var-left { display: flex; gap: 0.5rem; align-items: baseline; }
+    .var-key { font-weight: 700; font-size: 0.8rem; color: #111; }
+    .var-name { font-size: 0.78rem; color: #6b7280; }
+    .var-score { font-weight: 700; font-size: 0.9rem; }
+    .var-bar-track { height: 5px; background: #f0f0f0; border-radius: 3px; overflow: hidden; }
+    .var-bar-fill { height: 100%; border-radius: 3px; width: 0%; transition: width 1s cubic-bezier(0.16,1,0.3,1); }
+    .var-reasoning { margin-top: 0.3rem; font-size: 0.75rem; color: #9ca3af; line-height: 1.5; }
+
+    /* Verdict box */
+    #verdict-box {
+      border-radius: 12px;
+      padding: 1.1rem 1.25rem;
+      margin-bottom: 1.25rem;
+    }
+    .verdict-title {
+      font-size: 0.68rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 0.4rem;
+    }
+    #verdict-text { font-size: 0.86rem; color: #374151; line-height: 1.7; }
+
+    #reset-btn {
+      background: #fff;
+      border: 1.5px solid #e5e7eb;
+      border-radius: 8px;
+      color: #6b7280;
+      font-weight: 600;
+      font-size: 0.8rem;
+      padding: 0.55rem 1rem;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+    #reset-btn:hover { background: #f9fafb; border-color: #d1d5db; color: #374151; }
+
+    /* Legend */
+    #legend { margin-top: 1.5rem; }
+    #legend p {
+      font-size: 0.68rem;
+      color: #9ca3af;
+      margin-bottom: 0.6rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .legend-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.4rem;
+    }
+    .legend-item {
+      display: flex;
+      gap: 0.5rem;
+      align-items: center;
+      padding: 0.5rem 0.75rem;
+      background: #f9fafb;
+      border-radius: 6px;
+    }
+    .legend-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .legend-key { font-weight: 700; font-size: 0.76rem; }
+    .legend-label { font-size: 0.73rem; color: #9ca3af; }
+
+    /* Footer */
+    #footer {
+      margin-top: 3rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid #f0f0f0;
+    }
+    #change-key-btn {
+      background: none;
+      border: none;
+      color: #9ca3af;
+      font-size: 0.72rem;
+      cursor: pointer;
+      text-decoration: underline;
+      font-family: inherit;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <h1>Company Success Analyzer</h1>
+  <p class="subtitle">
+    Rates any company's future success out of 10 using
+    S = (V × E) × (T + S)<sup style="font-size:0.7em">(M+N)</sup>
+  </p>
+
+  <!-- API Key Banner -->
+  <div id="api-key-banner">
+    <p>Enter your Anthropic API key to use this tool.
+      Get one free at <a href="https://console.anthropic.com" target="_blank">console.anthropic.com</a>
+    </p>
+    <div id="api-key-row">
+      <input id="api-key-input" type="password" placeholder="sk-ant-..." autocomplete="off" />
+      <button id="api-key-save">Save</button>
     </div>
-  );
-}
+  </div>
 
-function AnimatedNumber({ value, decimals = 1 }) {
-  const [display, setDisplay] = useState(0);
-  const raf = useRef(null);
-  useEffect(() => {
-    setDisplay(0);
-    const start = performance.now();
-    const duration = 1200;
-    const tick = (now) => {
-      const p = Math.min((now - start) / duration, 1);
-      const eased = 1 - Math.pow(1 - p, 3);
-      setDisplay(value * eased);
-      if (p < 1) raf.current = requestAnimationFrame(tick);
-    };
-    cancelAnimationFrame(raf.current);
-    raf.current = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf.current);
-  }, [value]);
-  return <>{display.toFixed(decimals)}</>;
-}
+  <!-- Search bar -->
+  <div id="search-row">
+    <input id="company-input" type="text" placeholder="Enter any company name..." />
+    <button id="analyze-btn">Analyze</button>
+  </div>
 
-export default function App() {
-  const [company, setCompany] = useState("");
-  const [extraFields, setExtraFields] = useState({});
-  const [showExtra, setShowExtra] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null);
-  const [error, setError] = useState("");
+  <!-- Toggle extra info -->
+  <button id="toggle-extra">
+    <span id="toggle-arrow">▸</span>
+    <span id="toggle-label">Add company info manually</span>
+    <span class="hint" id="toggle-hint"> — for unlisted or private companies</span>
+  </button>
 
-  const hasExtraInfo = Object.values(extraFields).some(v => v?.trim());
+  <!-- Extra info panel -->
+  <div id="extra-panel">
+    <p class="intro"><strong>No web presence?</strong> Fill in what you know. The AI will use your input directly. Leave blank any fields you don't know.</p>
+    <div class="field-group">
+      <label>What does the company do?</label>
+      <textarea id="f-what" rows="2" placeholder="e.g. B2B SaaS for supply chain logistics..."></textarea>
+    </div>
+    <div class="field-group">
+      <label>Who founded it / who runs it?</label>
+      <textarea id="f-founder" rows="2" placeholder="e.g. Former Google engineer, 10 yrs experience..."></textarea>
+    </div>
+    <div class="field-group">
+      <label>What market are they targeting?</label>
+      <textarea id="f-market" rows="2" placeholder="e.g. SMBs in the US healthcare sector..."></textarea>
+    </div>
+    <div class="field-group">
+      <label>Any traction, revenue, or customers?</label>
+      <textarea id="f-traction" rows="2" placeholder="e.g. $50k MRR, 200 paying customers..."></textarea>
+    </div>
+    <div class="field-group">
+      <label>Who are their competitors?</label>
+      <textarea id="f-competition" rows="2" placeholder="e.g. Competing with Salesforce and HubSpot..."></textarea>
+    </div>
+    <div class="field-group">
+      <label>Anything else relevant?</label>
+      <textarea id="f-extra" rows="2" placeholder="e.g. Raised $500k pre-seed, launched 6 months ago..."></textarea>
+    </div>
+    <button id="clear-fields">Clear all fields</button>
+  </div>
 
-  const buildExtraContext = () => {
-    return EXTRA_INFO_FIELDS
-      .filter(f => extraFields[f.key]?.trim())
-      .map(f => `${f.label}\n${extraFields[f.key].trim()}`)
-      .join("\n\n");
+  <!-- Loading -->
+  <div id="loading">
+    <div class="spinner"></div>
+    <span id="loading-text">Analyzing...</span>
+  </div>
+
+  <!-- Error -->
+  <div id="error"></div>
+
+  <!-- Results -->
+  <div id="results">
+    <div class="card" id="header-card">
+      <div class="company-header">
+        <div style="flex:1;min-width:0">
+          <div class="company-name" id="res-name"></div>
+          <div class="company-desc" id="res-desc"></div>
+        </div>
+        <div class="verdict-badge" id="res-badge"></div>
+      </div>
+      <div class="score-box">
+        <div class="score-label">Success Score</div>
+        <div class="score-number-row">
+          <span class="score-number" id="res-score">0.0</span>
+          <span class="score-denom">/10</span>
+        </div>
+        <div class="score-bar-track">
+          <div class="score-bar-fill" id="res-score-bar"></div>
+        </div>
+        <div class="score-formula">
+          Normalized from S = (V × E) × (T + S)<sup style="font-size:0.7em">(M+N)</sup> · max possible = 10.0
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="section-label">Variable Breakdown</div>
+      <div id="var-breakdown"></div>
+    </div>
+
+    <div id="verdict-box">
+      <div class="verdict-title" id="verdict-title">Verdict</div>
+      <div id="verdict-text"></div>
+    </div>
+
+    <button id="reset-btn">Analyze another →</button>
+  </div>
+
+  <!-- Legend -->
+  <div id="legend">
+    <p>Formula variables</p>
+    <div class="legend-grid" id="legend-grid"></div>
+  </div>
+
+  <!-- Footer -->
+  <div id="footer" style="display:none">
+    <button id="change-key-btn">Change API key</button>
+  </div>
+
+</div>
+
+<script>
+  // ── CONFIG ────────────────────────────────────────────────────────────────
+  const VARS = {
+    V: { label: "Vision & Opportunity", color: "#f59e0b" },
+    E: { label: "Execution & People",   color: "#10b981" },
+    T: { label: "Timing",               color: "#3b82f6" },
+    S: { label: "Scalability",          color: "#8b5cf6" },
+    M: { label: "Moat & Durability",    color: "#ef4444" },
+    N: { label: "Network Effects",      color: "#ec4899" },
   };
 
-  const analyze = async () => {
-    if (!company.trim() || loading) return;
-    setLoading(true);
-    setResult(null);
-    setError("");
+  const VERDICT_COLORS = {
+    Exceptional: "#16a34a",
+    Strong:      "#2563eb",
+    Promising:   "#7c3aed",
+    Moderate:    "#d97706",
+    Weak:        "#dc2626",
+  };
 
-    const extraContext = buildExtraContext();
+  const LOG_MAX = Math.log((10 * 10) * Math.pow(20, 20));
+
+  function normalizeScore({ V, E, T, S, M, N }) {
+    const raw = (V * E) * Math.pow(T + S, M + N);
+    if (raw <= 0) return 0;
+    return Math.min(10, Math.max(0, (Math.log(raw) / LOG_MAX) * 10));
+  }
+
+  function buildPrompt(company, extraInfo) {
+    return `You are a startup and company analyst. Use your training knowledge to analyze companies.
+
+Score on: S = (V * E) * (T + S)^(M + N)
+
+Variables (0.0-10.0):
+- V: Vision & Opportunity
+- E: Execution & People & Distribution & Innovation & Engineering & Capital
+- T: Timing — alignment with technological or economic inflection points
+- S: Scalability — grow with decreasing marginal costs
+- M: Moat & Market Share & Lock-in & Durability
+- N: Network Effects
+
+${extraInfo
+  ? `User context:\n"""\n${extraInfo}\n"""\nBase scores on this. Fill gaps with reasonable assumptions.`
+  : `Use everything you know. Never refuse to score — use conservative estimates if info is limited.`
+}
+
+Respond with ONLY a raw JSON object, nothing else, no markdown, no backticks:
+{"company":"Name","description":"2-3 sentences","scores":{"V":7.5,"E":8.2,"T":9.0,"S":8.8,"M":7.0,"N":6.5},"reasoning":{"V":"one sentence","E":"one sentence","T":"one sentence","S":"one sentence","M":"one sentence","N":"one sentence"},"verdict":"2-3 sentences","successLabel":"Strong"}
+
+successLabel must be exactly one of: Exceptional, Strong, Promising, Moderate, Weak`;
+  }
+
+  // ── STATE ─────────────────────────────────────────────────────────────────
+  let apiKey = localStorage.getItem("anthropic_key") || "";
+  let extraOpen = false;
+  let animFrame = null;
+
+  // ── INIT ──────────────────────────────────────────────────────────────────
+  // Build legend
+  const legendGrid = document.getElementById("legend-grid");
+  for (const [k, v] of Object.entries(VARS)) {
+    const item = document.createElement("div");
+    item.className = "legend-item";
+    item.innerHTML = `<span class="legend-dot" style="background:${v.color}"></span><span class="legend-key">${k}</span><span class="legend-label">${v.label}</span>`;
+    legendGrid.appendChild(item);
+  }
+
+  // Restore API key
+  if (apiKey) {
+    document.getElementById("api-key-banner").style.display = "none";
+    document.getElementById("footer").style.display = "block";
+  }
+
+  // ── API KEY ───────────────────────────────────────────────────────────────
+  document.getElementById("api-key-save").addEventListener("click", () => {
+    const val = document.getElementById("api-key-input").value.trim();
+    if (!val) return;
+    apiKey = val;
+    localStorage.setItem("anthropic_key", val);
+    document.getElementById("api-key-banner").style.display = "none";
+    document.getElementById("footer").style.display = "block";
+  });
+
+  document.getElementById("change-key-btn").addEventListener("click", () => {
+    document.getElementById("api-key-input").value = apiKey;
+    document.getElementById("api-key-banner").style.display = "block";
+  });
+
+  document.getElementById("api-key-input").addEventListener("keydown", e => {
+    if (e.key === "Enter") document.getElementById("api-key-save").click();
+  });
+
+  // ── EXTRA PANEL ───────────────────────────────────────────────────────────
+  document.getElementById("toggle-extra").addEventListener("click", () => {
+    extraOpen = !extraOpen;
+    document.getElementById("extra-panel").classList.toggle("open", extraOpen);
+    document.getElementById("toggle-arrow").textContent = extraOpen ? "▾" : "▸";
+    updateToggleLabel();
+  });
+
+  document.getElementById("clear-fields").addEventListener("click", () => {
+    ["what","founder","market","traction","competition","extra"].forEach(k => {
+      document.getElementById("f-" + k).value = "";
+    });
+    document.getElementById("clear-fields").style.display = "none";
+    updateToggleLabel();
+  });
+
+  ["what","founder","market","traction","competition","extra"].forEach(k => {
+    document.getElementById("f-" + k).addEventListener("input", () => {
+      const hasAny = getExtraContext().trim().length > 0;
+      document.getElementById("clear-fields").style.display = hasAny ? "inline" : "none";
+      updateToggleLabel();
+    });
+  });
+
+  function updateToggleLabel() {
+    const hasInfo = getExtraContext().trim().length > 0;
+    const label = document.getElementById("toggle-label");
+    const hint  = document.getElementById("toggle-hint");
+    if (hasInfo && !extraOpen) {
+      label.textContent = "✓ Company info added";
+      hint.textContent = "";
+    } else {
+      label.textContent = "Add company info manually";
+      hint.textContent = " — for unlisted or private companies";
+    }
+  }
+
+  function getExtraContext() {
+    const fields = [
+      { id: "f-what",        label: "What does the company do?" },
+      { id: "f-founder",     label: "Who founded it / who runs it?" },
+      { id: "f-market",      label: "What market are they targeting?" },
+      { id: "f-traction",    label: "Any traction, revenue, or customers?" },
+      { id: "f-competition", label: "Who are their competitors?" },
+      { id: "f-extra",       label: "Anything else relevant?" },
+    ];
+    return fields
+      .filter(f => document.getElementById(f.id).value.trim())
+      .map(f => `${f.label}\n${document.getElementById(f.id).value.trim()}`)
+      .join("\n\n");
+  }
+
+  // ── ANALYZE ───────────────────────────────────────────────────────────────
+  document.getElementById("company-input").addEventListener("keydown", e => {
+    if (e.key === "Enter") analyze();
+  });
+  document.getElementById("analyze-btn").addEventListener("click", analyze);
+  document.getElementById("reset-btn").addEventListener("click", reset);
+
+  async function analyze() {
+    const company = document.getElementById("company-input").value.trim();
+    if (!company) return;
+
+    if (!apiKey) {
+      showError("Please enter your Anthropic API key first.");
+      document.getElementById("api-key-banner").style.display = "block";
+      return;
+    }
+
+    setLoading(true, company);
+    hideError();
+    hideResults();
+
+    const extraContext = getExtraContext();
 
     try {
       const response = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "x-api-key": apiKey,
+          "anthropic-version": "2023-06-01",
+          "anthropic-dangerous-direct-browser-access": "true",
+        },
         body: JSON.stringify({
           model: "claude-sonnet-4-20250514",
           max_tokens: 1500,
@@ -151,268 +684,128 @@ export default function App() {
       if (data.error) throw new Error(data.error.message);
 
       const text = (data.content || []).filter(b => b.type === "text").map(b => b.text).join("");
-      if (!text) throw new Error("Empty response");
+      if (!text) throw new Error("Empty response from API");
 
-      // Robustly extract JSON — handles any stray text before/after
       const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error("No JSON found in response");
+      if (!jsonMatch) throw new Error("Could not parse response");
 
       const parsed = JSON.parse(jsonMatch[0]);
       if (!parsed.scores || !parsed.company) throw new Error("Invalid response structure");
 
-      parsed.normalizedScore = computeNormalizedScore(parsed.scores);
-      setResult(parsed);
+      parsed.normalizedScore = normalizeScore(parsed.scores);
+      renderResults(parsed);
     } catch (e) {
-      setError("Analysis failed — try again, or use \"Add company info manually\" below for unknown companies.");
+      showError("Analysis failed: " + e.message + ". Try again, or add company info manually.");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
-  const reset = () => { setResult(null); setCompany(""); setExtraFields({}); setShowExtra(false); setError(""); };
+  // ── RENDER ────────────────────────────────────────────────────────────────
+  function renderResults(data) {
+    const vc = VERDICT_COLORS[data.successLabel] || "#6b7280";
+    const score = data.normalizedScore;
+    const scoreColor = score >= 7 ? "#16a34a" : score >= 5 ? "#2563eb" : score >= 3 ? "#d97706" : "#dc2626";
 
-  const verdictColor = result ? (VERDICT_COLORS[result.successLabel] || "#6b7280") : "#6b7280";
-  const score = result?.normalizedScore ?? 0;
+    // Company header
+    document.getElementById("res-name").textContent = data.company;
+    document.getElementById("res-desc").textContent = data.description;
 
-  // Color interpolation based on score
-  const scoreColor = score >= 7 ? "#16a34a" : score >= 5 ? "#2563eb" : score >= 3 ? "#d97706" : "#dc2626";
+    const badge = document.getElementById("res-badge");
+    badge.textContent = data.successLabel;
+    badge.style.background = vc + "18";
+    badge.style.border = "1.5px solid " + vc + "40";
+    badge.style.color = vc;
 
-  return (
-    <div style={{ minHeight: "100vh", background: "#fff", fontFamily: "system-ui, -apple-system, sans-serif", color: "#111" }}>
-      <style>{`
-        @keyframes spin { to { transform: rotate(360deg); } }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-        .analyze-btn:hover:not(:disabled) { background: #000 !important; }
-        .reset-btn:hover { background: #f9fafb !important; border-color: #d1d5db !important; color: #374151 !important; }
-        .toggle-btn:hover { background: #f3f4f6 !important; }
-        textarea:focus, input:focus { outline: none !important; border-color: #111 !important; }
-      `}</style>
+    // Score
+    const scoreEl = document.getElementById("res-score");
+    scoreEl.style.color = scoreColor;
+    animateNumber(scoreEl, score, 1200);
 
-      <div style={{ maxWidth: "640px", margin: "0 auto", padding: "3rem 1.5rem 5rem" }}>
+    const bar = document.getElementById("res-score-bar");
+    bar.style.background = scoreColor;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => { bar.style.width = (score / 10 * 100) + "%"; });
+    });
 
-        {/* Header */}
-        <div style={{ marginBottom: "2rem" }}>
-          <h1 style={{ fontSize: "1.7rem", fontWeight: 800, margin: "0 0 0.35rem", letterSpacing: "-0.02em" }}>
-            Company Success Analyzer
-          </h1>
-          <p style={{ margin: 0, color: "#6b7280", fontSize: "0.88rem" }}>
-            Rates any company's future success out of 10 using the formula S = (V × E) × (T + S)<sup style={{ fontSize: "0.7em" }}>(M+N)</sup>
-          </p>
+    // Variable breakdown
+    const breakdown = document.getElementById("var-breakdown");
+    breakdown.innerHTML = "";
+    Object.entries(data.scores).forEach(([k, v], i) => {
+      const meta = VARS[k];
+      const row = document.createElement("div");
+      row.className = "var-row";
+      row.innerHTML = `
+        <div class="var-header">
+          <div class="var-left">
+            <span class="var-key">${k}</span>
+            <span class="var-name">${meta.label}</span>
+          </div>
+          <span class="var-score" style="color:${meta.color}">${v.toFixed(1)}</span>
         </div>
-
-        {/* Search bar */}
-        <div style={{ display: "flex", gap: "0.5rem", marginBottom: "0.75rem" }}>
-          <input
-            type="text"
-            value={company}
-            onChange={e => setCompany(e.target.value)}
-            onKeyDown={e => e.key === "Enter" && !showExtra && analyze()}
-            placeholder="Enter any company name…"
-            style={{
-              flex: 1, minWidth: 0, padding: "0.7rem 1rem",
-              border: "1.5px solid #e5e7eb", borderRadius: "8px",
-              fontSize: "0.95rem", background: "#fafafa",
-              transition: "border-color 0.15s", boxSizing: "border-box",
-            }}
-            onFocus={e => e.target.style.borderColor = "#111"}
-            onBlur={e => e.target.style.borderColor = "#e5e7eb"}
-          />
-          <button
-            className="analyze-btn"
-            onClick={analyze}
-            disabled={loading || !company.trim()}
-            style={{
-              padding: "0.7rem 1.3rem", background: loading ? "#f3f4f6" : "#111",
-              border: "1.5px solid #111", borderRadius: "8px",
-              color: loading ? "#9ca3af" : "#fff",
-              fontWeight: 600, fontSize: "0.88rem",
-              cursor: loading ? "not-allowed" : "pointer",
-              transition: "background 0.15s", whiteSpace: "nowrap", flexShrink: 0,
-            }}
-          >
-            {loading ? "Analyzing…" : "Analyze"}
-          </button>
+        <div class="var-bar-track">
+          <div class="var-bar-fill" id="vbar-${k}" style="background:${meta.color}"></div>
         </div>
+        ${data.reasoning?.[k] ? `<div class="var-reasoning">${data.reasoning[k]}</div>` : ""}
+      `;
+      breakdown.appendChild(row);
 
-        {/* Toggle extra info */}
-        <button
-          className="toggle-btn"
-          onClick={() => setShowExtra(v => !v)}
-          style={{
-            background: "none", border: "1.5px solid #e5e7eb", borderRadius: "7px",
-            color: showExtra ? "#111" : "#6b7280", fontWeight: 600, fontSize: "0.78rem",
-            padding: "0.45rem 0.85rem", cursor: "pointer",
-            transition: "all 0.15s", marginBottom: "1rem",
-            display: "flex", alignItems: "center", gap: "0.4rem",
-          }}
-        >
-          <span style={{ fontSize: "0.85rem" }}>{showExtra ? "▾" : "▸"}</span>
-          {hasExtraInfo && !showExtra ? "✓ Company info added" : "Add company info manually"}
-          {!hasExtraInfo && <span style={{ color: "#9ca3af", fontWeight: 400 }}>— for unlisted or private companies</span>}
-        </button>
+      setTimeout(() => {
+        const fill = document.getElementById("vbar-" + k);
+        if (fill) fill.style.width = (v / 10 * 100) + "%";
+      }, i * 70);
+    });
 
-        {/* Extra info panel */}
-        {showExtra && (
-          <div style={{
-            border: "1.5px solid #e5e7eb", borderRadius: "12px", padding: "1.25rem",
-            marginBottom: "1.25rem", background: "#fafafa",
-            animation: "fadeIn 0.2s ease both",
-          }}>
-            <p style={{ margin: "0 0 1rem", fontSize: "0.8rem", color: "#374151", lineHeight: 1.6 }}>
-              <strong>No web presence?</strong> Fill in what you know. The AI will use your input instead of searching the web.
-              Leave blank any fields you don't know.
-            </p>
-            {EXTRA_INFO_FIELDS.map(field => (
-              <div key={field.key} style={{ marginBottom: "0.9rem" }}>
-                <label style={{ display: "block", fontSize: "0.75rem", fontWeight: 600, color: "#374151", marginBottom: "0.3rem" }}>
-                  {field.label}
-                </label>
-                <textarea
-                  value={extraFields[field.key] || ""}
-                  onChange={e => setExtraFields(prev => ({ ...prev, [field.key]: e.target.value }))}
-                  placeholder={field.placeholder}
-                  rows={2}
-                  style={{
-                    width: "100%", padding: "0.6rem 0.8rem",
-                    border: "1.5px solid #e5e7eb", borderRadius: "7px",
-                    fontSize: "0.82rem", background: "#fff", color: "#111",
-                    resize: "vertical", boxSizing: "border-box",
-                    fontFamily: "system-ui, -apple-system, sans-serif",
-                    lineHeight: 1.5, transition: "border-color 0.15s",
-                  }}
-                  onFocus={e => e.target.style.borderColor = "#111"}
-                  onBlur={e => e.target.style.borderColor = "#e5e7eb"}
-                />
-              </div>
-            ))}
-            {hasExtraInfo && (
-              <button
-                onClick={() => setExtraFields({})}
-                style={{
-                  background: "none", border: "none", color: "#9ca3af",
-                  fontSize: "0.75rem", cursor: "pointer", padding: 0,
-                  textDecoration: "underline",
-                }}
-              >
-                Clear all fields
-              </button>
-            )}
-          </div>
-        )}
+    // Verdict
+    const vbox = document.getElementById("verdict-box");
+    vbox.style.border = "1.5px solid " + vc + "30";
+    vbox.style.background = vc + "08";
+    document.getElementById("verdict-title").style.color = vc;
+    document.getElementById("verdict-text").textContent = data.verdict;
 
-        {/* Loading */}
-        {loading && (
-          <div style={{ display: "flex", alignItems: "center", gap: "0.6rem", color: "#6b7280", fontSize: "0.83rem", marginBottom: "1.25rem" }}>
-            <div style={{
-              width: "14px", height: "14px", flexShrink: 0,
-              border: "2px solid #e5e7eb", borderTopColor: "#111",
-              borderRadius: "50%", animation: "spin 0.75s linear infinite",
-            }} />
-            {`Analyzing "${company}"...`}
-          </div>
-        )}
+    // Show results, hide legend
+    document.getElementById("results").classList.add("visible");
+    document.getElementById("legend").style.display = "none";
+  }
 
-        {/* Error */}
-        {error && (
-          <div style={{ padding: "0.75rem 1rem", background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", color: "#dc2626", fontSize: "0.83rem", marginBottom: "1.25rem" }}>
-            {error}
-          </div>
-        )}
+  function animateNumber(el, target, duration) {
+    cancelAnimationFrame(animFrame);
+    const start = performance.now();
+    function tick(now) {
+      const p = Math.min((now - start) / duration, 1);
+      const eased = 1 - Math.pow(1 - p, 3);
+      el.textContent = (target * eased).toFixed(1);
+      if (p < 1) animFrame = requestAnimationFrame(tick);
+    }
+    animFrame = requestAnimationFrame(tick);
+  }
 
-        {/* Results */}
-        {result && !loading && (
-          <div style={{ animation: "fadeIn 0.35s ease both" }}>
+  function reset() {
+    document.getElementById("company-input").value = "";
+    document.getElementById("results").classList.remove("visible");
+    document.getElementById("legend").style.display = "block";
+    hideError();
+  }
 
-            {/* Header card with score */}
-            <div style={{ border: "1.5px solid #e5e7eb", borderRadius: "12px", padding: "1.25rem", marginBottom: "0.75rem" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: "1rem", flexWrap: "wrap", marginBottom: "1rem" }}>
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <h2 style={{ margin: "0 0 0.2rem", fontSize: "1.25rem", fontWeight: 800 }}>{result.company}</h2>
-                  <p style={{ margin: 0, fontSize: "0.8rem", color: "#6b7280", lineHeight: 1.6 }}>{result.description}</p>
-                </div>
-                <div style={{
-                  padding: "0.2rem 0.7rem", flexShrink: 0,
-                  background: `${verdictColor}12`, border: `1.5px solid ${verdictColor}35`,
-                  borderRadius: "100px", color: verdictColor,
-                  fontWeight: 700, fontSize: "0.72rem",
-                }}>
-                  {result.successLabel}
-                </div>
-              </div>
+  function setLoading(on, company) {
+    document.getElementById("loading").classList.toggle("visible", on);
+    if (on) document.getElementById("loading-text").textContent = `Analyzing "${company}"...`;
+    document.getElementById("analyze-btn").disabled = on;
+  }
 
-              {/* Score out of 10 */}
-              <div style={{ background: "#f9fafb", borderRadius: "8px", padding: "1.1rem", textAlign: "center" }}>
-                <div style={{ fontSize: "0.65rem", fontWeight: 600, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: "0.25rem" }}>
-                  Success Score
-                </div>
-                <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: "0.15rem", lineHeight: 1 }}>
-                  <span style={{ fontSize: "3rem", fontWeight: 800, color: scoreColor, letterSpacing: "-0.03em" }}>
-                    <AnimatedNumber value={score} decimals={1} />
-                  </span>
-                  <span style={{ fontSize: "1.1rem", fontWeight: 600, color: "#9ca3af" }}>/10</span>
-                </div>
+  function showError(msg) {
+    const el = document.getElementById("error");
+    el.textContent = msg;
+    el.classList.add("visible");
+  }
 
-                {/* Score bar */}
-                <div style={{ margin: "0.75rem 0 0.5rem", height: "6px", background: "#e5e7eb", borderRadius: "3px", overflow: "hidden" }}>
-                  <div style={{
-                    height: "100%",
-                    width: `${(score / 10) * 100}%`,
-                    background: scoreColor,
-                    borderRadius: "3px",
-                    transition: "width 1.2s cubic-bezier(0.16,1,0.3,1)",
-                  }} />
-                </div>
-                <div style={{ fontSize: "0.68rem", color: "#9ca3af" }}>
-                  Normalized from S = (V × E) × (T + S)<sup style={{ fontSize: "0.7em" }}>(M+N)</sup> · max possible = 10.0
-                </div>
-              </div>
-            </div>
+  function hideError() {
+    document.getElementById("error").classList.remove("visible");
+  }
 
-            {/* Breakdown */}
-            <div style={{ border: "1.5px solid #e5e7eb", borderRadius: "12px", padding: "1.25rem", marginBottom: "0.75rem" }}>
-              <p style={{ margin: "0 0 1rem", fontSize: "0.68rem", fontWeight: 700, color: "#9ca3af", textTransform: "uppercase", letterSpacing: "0.1em" }}>Variable Breakdown</p>
-              {Object.entries(result.scores).map(([k, v], i) => (
-                <ScoreBar key={k} variable={k} score={v} reasoning={result.reasoning?.[k]} delay={i * 70} />
-              ))}
-            </div>
-
-            {/* Verdict */}
-            <div style={{ border: `1.5px solid ${verdictColor}25`, background: `${verdictColor}07`, borderRadius: "12px", padding: "1.1rem 1.25rem", marginBottom: "1.25rem" }}>
-              <p style={{ margin: "0 0 0.4rem", fontSize: "0.68rem", fontWeight: 700, color: verdictColor, textTransform: "uppercase", letterSpacing: "0.1em" }}>Verdict</p>
-              <p style={{ margin: 0, fontSize: "0.86rem", color: "#374151", lineHeight: 1.7 }}>{result.verdict}</p>
-            </div>
-
-            <button
-              className="reset-btn"
-              onClick={reset}
-              style={{
-                background: "#fff", border: "1.5px solid #e5e7eb", borderRadius: "8px",
-                color: "#6b7280", fontWeight: 600, fontSize: "0.8rem",
-                padding: "0.55rem 1rem", cursor: "pointer", transition: "all 0.15s",
-              }}
-            >
-              Analyze another →
-            </button>
-          </div>
-        )}
-
-        {/* Legend when idle */}
-        {!result && !loading && (
-          <div style={{ marginTop: "1.5rem" }}>
-            <p style={{ fontSize: "0.68rem", color: "#9ca3af", margin: "0 0 0.6rem", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>Formula variables</p>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.4rem" }}>
-              {Object.entries(VARS).map(([k, v]) => (
-                <div key={k} style={{ display: "flex", gap: "0.5rem", alignItems: "center", padding: "0.5rem 0.75rem", background: "#f9fafb", borderRadius: "6px" }}>
-                  <span style={{ width: "7px", height: "7px", borderRadius: "50%", background: v.color, flexShrink: 0 }} />
-                  <span style={{ fontWeight: 700, fontSize: "0.76rem" }}>{k}</span>
-                  <span style={{ fontSize: "0.73rem", color: "#9ca3af" }}>{v.label}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
-
-      </div>
-    </div>
-  );
-}
+  function hideResults() {
+    document.getElementById("results").classList.remove("visible");
+  }
+</script>
+</body>
+</html>
